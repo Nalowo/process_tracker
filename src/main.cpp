@@ -49,12 +49,12 @@ void PrintProcessVec(const std::vector<ProcessInfo> &processes)
  */
 size_t GetCpuUsageCycles(const HANDLE &hProcess)
 {
-    ULONG64 CycleTime1{0};
-
     if (hProcess == NULL)
     {
-        return 0;
+        throw std::runtime_error("GetCpuUsageCycles failed: hProcess == NULL");
     }
+
+    ULONG64 CycleTime1{0};
 
     QueryProcessCycleTime(hProcess, &CycleTime1);
 
@@ -71,8 +71,8 @@ std::vector<ProcessInfo> GetCpuUsageList()
     net::io_context io;
     std::vector<ProcessInfo> processes;
 
-    DWORD processIds[1024]; // Массив идентификаторов процессов
-    DWORD bytesReturned;    // Количество байтов, выделенных под идентификаторы процессов
+    DWORD processIds[1024];
+    DWORD bytesReturned;
 
     if (!EnumProcesses(processIds, sizeof(processIds), &bytesReturned))
     {
@@ -100,7 +100,15 @@ std::vector<ProcessInfo> GetCpuUsageList()
             GetModuleBaseName(processHandle, hMod, process->name, sizeof(process->name) / sizeof(TCHAR));
         }
 
-        process->cpuCycles1 = GetCpuUsageCycles(processHandle);
+        try
+        {
+            process->cpuCycles1 = GetCpuUsageCycles(processHandle);
+        }
+        catch (const std::runtime_error &e)
+        {
+            std::cout << "Process " << processIds[i] << " error:" << e.what() << std::endl;
+            continue;
+        }
 
         auto t = std::make_shared<net::steady_timer>(io, std::chrono::seconds(1));
         t->async_wait([t = std::move(t), processHandle = std::move(processHandle), process = std::move(process), &processes](const sys::error_code &ec)
@@ -119,7 +127,9 @@ std::vector<ProcessInfo> GetCpuUsageList()
                 CloseHandle(processHandle);
             } });
     }
+
     io.run();
+
     return processes;
 }
 
