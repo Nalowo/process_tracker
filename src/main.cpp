@@ -1,8 +1,6 @@
 #define _WIN32_WINNT 0x0600
 
 #include <sdkddkver.h>
-#include <windows.h>
-// #include <tlhelp32.h>
 #include <realtimeapiset.h>
 #include <tchar.h>
 #include <psapi.h>
@@ -17,126 +15,60 @@
 namespace net = boost::asio;
 namespace sys = boost::system;
 
-// struct ProcessInfo
-// {
-//     DWORD processId; // Идентификатор процесса
-//     DWORD parentProcessId; // Идентификатор родительского процесса
-//     // std::string name;
-//     TCHAR name[MAX_PATH]; // Имя процесса
-//     FILETIME creationTime; // Время создания процесса
-//     FILETIME exitTime; // Время завершения процесса
-//     FILETIME kernelTime; // Время работы процессора в режиме ядра
-//     FILETIME userTime; // Время работы процессора в режиме пользователя
-//     SYSTEMTIME cpuTime; // сюда хотелось бы записать общее время работы процессора
-// };
-
-// std::vector<ProcessInfo> GetRunningProcesses()
-// {
-//     std::vector<ProcessInfo> processes; // Список процессов
-
-//     DWORD processIds[1024]; // Массив идентификаторов процессов
-//     DWORD bytesReturned; // Количество байтов, выделенных под идентификаторы процессов
-
-//     if (!EnumProcesses(processIds, sizeof(processIds), &bytesReturned))
-//     {
-//         // Handle error
-//         return processes;
-//     }
-
-//     int numProcesses = bytesReturned / sizeof(DWORD);
-
-//     for (int i = 0; i < numProcesses; i++)
-//     {
-//         ProcessInfo process;
-//         process.processId = processIds[i];
-
-//         HANDLE processHandle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processIds[i]);
-//         if (processHandle != NULL)
-//         {
-//             HMODULE hMod;
-//             DWORD cbNeeded;
-
-//             if (EnumProcessModules(processHandle, &hMod, sizeof(hMod), &cbNeeded))
-//             {
-//                 // GetModuleBaseName(processHandle, hMod, process.name.data(), static_cast<DWORD>(process.name.size()));
-//                 GetModuleBaseName(processHandle, hMod, process.name, sizeof(process.name) / sizeof(TCHAR));
-//             }
-
-//             FILETIME creationTime, exitTime, kernelTime, userTime;
-//             if (GetProcessTimes(processHandle, &creationTime, &exitTime, &kernelTime, &userTime))
-//             {
-//                 process.creationTime = creationTime;
-//                 process.exitTime = exitTime;
-//                 process.kernelTime = kernelTime;
-//                 process.userTime = userTime;
-//                 FileTimeToSystemTime(&process.kernelTime, &process.cpuTime);
-//             }
-
-//             CloseHandle(processHandle);
-//         }
-
-//         processes.push_back(process);
-//     }
-
-//     return processes;
-// }
-
+/**
+ * @brief Struct for process info
+ * 
+ */
 struct ProcessInfo
 {
-    DWORD processId;      // Идентификатор процесса
-    TCHAR name[MAX_PATH]; // Имя процесса
-    size_t cpuCycles = 0;
+    DWORD processId;         // process id
+    TCHAR name[MAX_PATH];    // process name
+    size_t cpuCycles1 = 0;   // col in cycles of process on first launch
+    size_t cpuCycles2 = 0;   // col in cycles of process on second launch
+    size_t cpuCyclesDif = 0; // difference between first and second launch
 };
 
-size_t GetCpuUsageCycles(DWORD pid)
+/**
+ * @brief Print process vector
+ * 
+ * @param processes vector of processes
+ */
+void PrintProcessVec(const std::vector<ProcessInfo> &processes)
 {
-    DWORD processId{pid};
+    for (const auto &process : processes)
+    {
+        _tprintf(TEXT("%s  (PID: %u)\n"), process.name, process.processId);
+    }
+}
+
+/**
+ * @brief Get cpu usage cycles
+ * 
+ * @param hProcess process descriptor
+ * @return size_t count of cpu usage cycles
+ */
+size_t GetCpuUsageCycles(const HANDLE &hProcess)
+{
     ULONG64 CycleTime1{0};
 
-    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
     if (hProcess == NULL)
     {
         return 0;
     }
 
     QueryProcessCycleTime(hProcess, &CycleTime1);
-    CloseHandle(hProcess);
 
     return CycleTime1;
 }
 
-void PrintProcessNameAndID(DWORD processID)
-{
-    TCHAR szProcessName[MAX_PATH] = TEXT("<unknown>");
-
-    // Get a handle to the process.
-    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION |
-                                      PROCESS_VM_READ,
-                                  FALSE, processID);
-
-    // Get the process name.
-    if (NULL != hProcess)
-    {
-        HMODULE hMod;
-        DWORD cbNeeded;
-
-        if (EnumProcessModules(hProcess, &hMod, sizeof(hMod),
-                               &cbNeeded))
-        {
-            GetModuleBaseName(hProcess, hMod, szProcessName,
-                              sizeof(szProcessName) / sizeof(TCHAR));
-        }
-    }
-
-    // Print the process name and identifier.
-    _tprintf(TEXT("%s  (PID: %u)\n"), szProcessName, processID);
-
-    // Release the handle to the process.
-    CloseHandle(hProcess);
-}
-
+/**
+ * @brief Get cpu usage list
+ * 
+ * @return std::vector<ProcessInfo> vector of processes with cpu usage
+ */
 std::vector<ProcessInfo> GetCpuUsageList()
 {
+    net::io_context io;
     std::vector<ProcessInfo> processes;
 
     DWORD processIds[1024]; // Массив идентификаторов процессов
@@ -152,44 +84,54 @@ std::vector<ProcessInfo> GetCpuUsageList()
 
     for (int i = 0; i < numProcesses; i++)
     {
-        ProcessInfo process;
-        process.processId = processIds[i];
+        auto process = std::make_shared<ProcessInfo>();
+        process->processId = processIds[i];
 
         HANDLE processHandle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processIds[i]);
-        if (processHandle != NULL)
+        if (processHandle == NULL)
         {
-            HMODULE hMod;
-            DWORD cbNeeded;
-
-            if (EnumProcessModules(processHandle, &hMod, sizeof(hMod), &cbNeeded))
-            {
-                GetModuleBaseName(processHandle, hMod, process.name, sizeof(process.name) / sizeof(TCHAR));
-            }
+            continue;
         }
-    }
 
+        HMODULE hMod;
+        DWORD cbNeeded;
+        if (EnumProcessModules(processHandle, &hMod, sizeof(hMod), &cbNeeded))
+        {
+            GetModuleBaseName(processHandle, hMod, process->name, sizeof(process->name) / sizeof(TCHAR));
+        }
+
+        process->cpuCycles1 = GetCpuUsageCycles(processHandle);
+
+        auto t = std::make_shared<net::steady_timer>(io, std::chrono::seconds(1));
+        t->async_wait([t = std::move(t), processHandle = std::move(processHandle), process = std::move(process), &processes](const sys::error_code &ec)
+                  {
+            if (!ec)
+            {
+                process->cpuCycles2 = GetCpuUsageCycles(processHandle);
+                process->cpuCyclesDif = process->cpuCycles2 - process->cpuCycles1;
+                CloseHandle(processHandle);
+
+                processes.push_back(std::move(*process));
+            }
+            else
+            {
+                std::cout << ec.message() << std::endl;
+                CloseHandle(processHandle);
+            } });
+    }
+    io.run();
     return processes;
 }
 
 int main()
 {
-    // std::vector<ProcessInfo> processes = GetRunningProcesses();
-
-    // // Sort the processes by CPU usage
-    // std::sort(processes.begin(), processes.end(), [](const ProcessInfo &a, const ProcessInfo &b)
-    //           { return a.kernelTime.dwLowDateTime > b.kernelTime.dwLowDateTime; });
-
-    // std::cout << "Total number of processes: " << processes.size() << std::endl;
-
-    // // Print the sorted list of processes
-    // for (const auto &process : processes)
-    // {
-    //     std::cout << "Process ID: " << process.processId << std::endl;
-    //     // std::cout << "Process Name: " << process.name << std::endl;
-    //     _tprintf(TEXT("Process Name: %s \n"), process.name);
-    //     std::cout << "CPU Usage: " << process.kernelTime.dwLowDateTime << std::endl;
-    //     std::cout << std::endl;
-    // }
-
-    return 0;
+    try
+    {
+        auto processes = GetCpuUsageList();
+        PrintProcessVec(processes);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Exception: " << e.what() << "\n";
+    }
 }
