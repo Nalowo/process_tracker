@@ -11,39 +11,44 @@
 #include <vector>
 #include <algorithm>
 #include <string>
+#include <numeric>
+#include <execution>
 
 namespace net = boost::asio;
 namespace sys = boost::system;
 
+static uint32_t _S_timeout_sec = 1;
+
 /**
  * @brief Struct for process info
- * 
+ *
  */
 struct ProcessInfo
 {
-    DWORD processId;         // process id
-    TCHAR name[MAX_PATH];    // process name
-    size_t cpuCycles1 = 0;   // col in cycles of process on first launch
-    size_t cpuCycles2 = 0;   // col in cycles of process on second launch
-    size_t cpuCyclesDif = 0; // difference between first and second launch
+    DWORD processId;               // process id
+    TCHAR name[MAX_PATH];          // process name
+    size_t cpuCycles1 = 0;         // col in cycles of process on first launch
+    size_t cpuCycles2 = 0;         // col in cycles of process on second launch
+    size_t cpuCyclesDif = 0;       // difference between first and second launch
+    uint32_t cpuCyclesDifPerc = 0; // precentage of difference between first and second launch
 };
 
 /**
  * @brief Print process vector
- * 
+ *
  * @param processes vector of processes
  */
 void PrintProcessVec(const std::vector<ProcessInfo> &processes)
 {
     for (const auto &process : processes)
     {
-        _tprintf(TEXT("%s  (PID: %u)\n"), process.name, process.processId);
+        _tprintf(TEXT("%s %u\% (PID: %u)\n"), process.name, process.cpuCyclesDifPerc, process.processId);
     }
 }
 
 /**
  * @brief Get cpu usage cycles
- * 
+ *
  * @param hProcess process descriptor
  * @return size_t count of cpu usage cycles
  */
@@ -63,7 +68,7 @@ size_t GetCpuUsageCycles(const HANDLE &hProcess)
 
 /**
  * @brief Get cpu usage list
- * 
+ *
  * @return std::vector<ProcessInfo> vector of processes with cpu usage
  */
 std::vector<ProcessInfo> GetCpuUsageList()
@@ -110,9 +115,9 @@ std::vector<ProcessInfo> GetCpuUsageList()
             continue;
         }
 
-        auto t = std::make_shared<net::steady_timer>(io, std::chrono::seconds(1));
+        auto t = std::make_shared<net::steady_timer>(io, std::chrono::seconds(_S_timeout_sec));
         t->async_wait([t = std::move(t), processHandle = std::move(processHandle), process = std::move(process), &processes](const sys::error_code &ec)
-                  {
+                      {
             if (!ec)
             {
                 process->cpuCycles2 = GetCpuUsageCycles(processHandle);
@@ -138,6 +143,14 @@ int main()
     try
     {
         auto processes = GetCpuUsageList();
+        std::sort(processes.begin(), processes.end(), [](const ProcessInfo &a, const ProcessInfo &b)
+                { return a.cpuCyclesDif > b.cpuCyclesDif; });
+
+        size_t cycles_summ = std::accumulate(processes.begin(), processes.end(), static_cast<size_t>(0), [](size_t a, const ProcessInfo &b) -> size_t
+                                             { return a + b.cpuCyclesDif; });
+        std::for_each(std::execution::par, processes.begin(), processes.end(), [cycles_summ = cycles_summ](ProcessInfo &b)
+                      { b.cpuCyclesDifPerc = (static_cast<double>(b.cpuCyclesDif) / static_cast<double>(cycles_summ)) * 100; });
+
         PrintProcessVec(processes);
     }
     catch (const std::exception &e)
