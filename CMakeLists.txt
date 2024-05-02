@@ -13,6 +13,3 @@ endif()
 
 add_executable(proc_t src/main.cpp)
 target_link_libraries(proc_t PRIVATE ws2_32 PSAPI ${CONAN_LIBS})
-
-# add_executable(test src/test.cpp)
-# target_link_libraries(test PRIVATE pdh.lib) # подключение счетчиков
