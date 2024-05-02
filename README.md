@@ -5,6 +5,8 @@ Example of view
 ```sh
 chrome.exe 20% (PID: 7136)
 ```
+Requirements:
+`minimal Windows Vista/Server 2008`
 
 ### Building example:
 `conan 1.64.0`
