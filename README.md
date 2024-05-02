@@ -1,6 +1,7 @@
 # process_tracker
 
 Simple utility that print runing process list to consol
+
 Example of view
 ```sh
 chrome.exe 20% (PID: 7136)
