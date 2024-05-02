@@ -12,6 +12,7 @@ Requirements:
 `conan 1.64.0`
 `g++ 12.2.0 (MinGW)`
 `boost 1.78.0`
+
 *In project folder*
 ```sh
 mkdir build && cd build
