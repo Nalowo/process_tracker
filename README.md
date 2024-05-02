@@ -1,1 +1,19 @@
 # process_tracker
+
+Simple utility that print runing process list to consol
+Example of view
+```sh
+chrome.exe 20% (PID: 7136)
+```
+
+### Building example:
+`conan 1.64.0`
+`g++ 12.2.0 (MinGW)`
+`boost 1.78.0`
+*In project folder*
+```sh
+mkdir build && cd build
+conan install --build missing ..  -pr ..\conanprof.txt
+cmake .. -DCMAKE_BUILD_TYPE=Release -G "MinGW Makefiles"
+cmake --build . 
+```
