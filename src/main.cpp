@@ -46,6 +46,36 @@ void PrintProcessVec(const std::vector<ProcessInfo> &processes)
     }
 }
 
+bool SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege)
+{
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
+
+    if (!LookupPrivilegeValue(NULL, lpszPrivilege, &luid))
+    {
+        std::cerr << "LookupPrivilegeValue error: " << GetLastError() << std::endl;
+        return false;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = bEnablePrivilege ? SE_PRIVILEGE_ENABLED : 0;
+
+    if (!AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL))
+    {
+        std::cerr << "AdjustTokenPrivileges error: " << GetLastError() << std::endl;
+        return false;
+    }
+
+    if (GetLastError() == ERROR_NOT_ALL_ASSIGNED)
+    {
+        std::cerr << "Privilege not assigned: " << GetLastError() << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 /**
  * @brief Get cpu usage cycles
  *
@@ -92,7 +122,7 @@ std::vector<ProcessInfo> GetCpuUsageList()
         auto process = std::make_shared<ProcessInfo>();
         process->processId = processIds[i];
 
-        HANDLE processHandle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processIds[i]);
+        HANDLE processHandle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, processIds[i]);
         if (processHandle == NULL)
         {
             continue;
@@ -140,11 +170,26 @@ std::vector<ProcessInfo> GetCpuUsageList()
 
 int main()
 {
+    HANDLE hToken;
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
+    {
+        std::cerr << "OpenProcessToken for current process error: " << GetLastError() << std::endl;
+        return 1;
+    }
+
+    if (!SetPrivilege(hToken, SE_DEBUG_NAME, TRUE))
+    {
+        std::cerr << "Can't enable SeDebugPrivilege" << std::endl;
+        CloseHandle(hToken);
+        return 1;
+    }
+
     try
     {
         auto processes = GetCpuUsageList();
         std::sort(processes.begin(), processes.end(), [](const ProcessInfo &a, const ProcessInfo &b)
-                { return a.cpuCyclesDif > b.cpuCyclesDif; });
+                  { return a.cpuCyclesDif > b.cpuCyclesDif; });
 
         size_t cycles_summ = std::accumulate(processes.begin(), processes.end(), static_cast<size_t>(0), [](size_t a, const ProcessInfo &b) -> size_t
                                              { return a + b.cpuCyclesDif; });
