@@ -3,7 +3,7 @@
 Simple utility that print runing process list to consol  
 Example of view:
 ```sh
-chrome.exe 20% (PID: 7136)
+chrome.exe 13% (PID: 3156 User: DOMAIN\UserName)
 ```
 Requirements:
 `minimal Windows Vista/Server 2008`

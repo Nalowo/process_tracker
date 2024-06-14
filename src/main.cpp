@@ -26,12 +26,13 @@ static uint32_t _S_timeout_sec = 1;
 struct ProcessInfo
 {
     DWORD processId;               // process id
-    TCHAR name[MAX_PATH];          // process name
+    std::wstring name;             // process name
+    std::wstring userName;         // user name of user that launched process
     size_t cpuCycles1 = 0;         // col in cycles of process on first launch
     size_t cpuCycles2 = 0;         // col in cycles of process on second launch
     size_t cpuCyclesDif = 0;       // difference between first and second launch
     uint32_t cpuCyclesDifPerc = 0; // precentage of difference between first and second launch
-    std::wstring userName;         // user name of user that launched process
+    
 };
 
 /**
@@ -43,7 +44,7 @@ void PrintProcessVec(const std::vector<ProcessInfo> &processes)
 {
     for (const auto &process : processes)
     {
-        _tprintf(TEXT("%s %u\% (PID: %u) User: %s\n"), process.name, process.cpuCyclesDifPerc, process.processId, process.userName.data());
+        _tprintf(TEXT("%ls %u\% (PID: %u User: %ls) \n"), process.name.c_str(), process.cpuCyclesDifPerc, process.processId, process.userName.c_str());
     }
 }
 
@@ -151,6 +152,7 @@ std::wstring GetProcessUserName(HANDLE hProcess)
     userName = domain;
     userName += L"\\";
     userName += name;
+    userName += L"\0";
 
     CloseHandle(hToken);
 
@@ -191,11 +193,13 @@ std::vector<ProcessInfo> GetCpuUsageList()
 
         HMODULE hMod;
         DWORD cbNeeded;
+        WCHAR process_name[MAX_PATH];
         if (EnumProcessModules(processHandle, &hMod, sizeof(hMod), &cbNeeded))
         {
-            GetModuleBaseName(processHandle, hMod, process->name, sizeof(process->name) / sizeof(TCHAR));
+            GetModuleBaseNameW(processHandle, hMod, process_name, sizeof(process_name) / sizeof(WCHAR));
         }
 
+        process->name = process_name;
         process->userName = GetProcessUserName(processHandle);
 
         try
