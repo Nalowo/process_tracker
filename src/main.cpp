@@ -31,6 +31,7 @@ struct ProcessInfo
     size_t cpuCycles2 = 0;         // col in cycles of process on second launch
     size_t cpuCyclesDif = 0;       // difference between first and second launch
     uint32_t cpuCyclesDifPerc = 0; // precentage of difference between first and second launch
+    std::wstring userName;         // user name of user that launched process
 };
 
 /**
@@ -42,10 +43,19 @@ void PrintProcessVec(const std::vector<ProcessInfo> &processes)
 {
     for (const auto &process : processes)
     {
-        _tprintf(TEXT("%s %u\% (PID: %u)\n"), process.name, process.cpuCyclesDifPerc, process.processId);
+        _tprintf(TEXT("%s %u\% (PID: %u) User: %s\n"), process.name, process.cpuCyclesDifPerc, process.processId, process.userName.data());
     }
 }
 
+/**
+ * @brief Set the Privilege object
+ *
+ * @param hToken current process token
+ * @param lpszPrivilege name of privilege
+ * @param bEnablePrivilege true if privilege should be enabled
+ * @return true
+ * @return false
+ */
 bool SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege)
 {
     TOKEN_PRIVILEGES tp;
@@ -97,6 +107,57 @@ size_t GetCpuUsageCycles(const HANDLE &hProcess)
 }
 
 /**
+ * @brief Get process user name
+ *
+ * @param hProcess process descriptor
+ * @return std::wstring user name
+ */
+std::wstring GetProcessUserName(HANDLE hProcess)
+{
+    std::wstring userName;
+
+    HANDLE hToken = NULL;
+    if (!OpenProcessToken(hProcess, TOKEN_QUERY, &hToken))
+    {
+        return userName;
+    }
+
+    DWORD tokenInfoLength = 0;
+    GetTokenInformation(hToken, TokenUser, NULL, 0, &tokenInfoLength);
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+    {
+        return userName;
+    }
+
+    std::vector<BYTE> tokenInfo(tokenInfoLength);
+    if (!GetTokenInformation(hToken, TokenUser, &tokenInfo[0], tokenInfoLength, &tokenInfoLength))
+    {
+        return userName;
+    }
+
+    TOKEN_USER *pTokenUser = reinterpret_cast<TOKEN_USER *>(&tokenInfo[0]);
+
+    WCHAR name[256];
+    WCHAR domain[256];
+    DWORD nameSize = sizeof(name) / sizeof(WCHAR);
+    DWORD domainSize = sizeof(domain) / sizeof(WCHAR);
+    SID_NAME_USE sidType;
+
+    if (!LookupAccountSidW(NULL, pTokenUser->User.Sid, name, &nameSize, domain, &domainSize, &sidType))
+    {
+        return userName;
+    }
+
+    userName = domain;
+    userName += L"\\";
+    userName += name;
+
+    CloseHandle(hToken);
+
+    return userName;
+}
+
+/**
  * @brief Get cpu usage list
  *
  * @return std::vector<ProcessInfo> vector of processes with cpu usage
@@ -134,6 +195,8 @@ std::vector<ProcessInfo> GetCpuUsageList()
         {
             GetModuleBaseName(processHandle, hMod, process->name, sizeof(process->name) / sizeof(TCHAR));
         }
+
+        process->userName = GetProcessUserName(processHandle);
 
         try
         {
